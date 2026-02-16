@@ -1,0 +1,8 @@
+{
+  "name": "철학자  상담 처방전-0215",
+  "description": "인생의 고민을 해결하는 엔터프라이즈급 AI 철학 상담 플랫폼. 실시간 음성 대화, 감정 분석 대시보드 및 지능형 처방 시스템을 제공합니다.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
