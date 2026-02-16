@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { EmotionType, Philosopher, FullPrescription, ViewType } from './types';
 import { EMOTIONS, PHILOSOPHERS, TEST_QUESTIONS, POPULAR_WORRIES } from './constants';
-import { generatePrescription, chatWithPhilosopher, generateSpeech } from './services/geminiService';
+import { generatePrescription, chatWithPhilosopher } from './services/geminiService';
 import { 
   Heart, BookOpen, MessageCircle, Home, 
   Quote, Sparkles, ArrowLeft, Send, 
@@ -24,7 +24,7 @@ interface GeminiBlob {
   mimeType: string;
 }
 
-// --- Audio Utilities ---
+// --- Audio Utilities for Live Session ---
 function encode(bytes: Uint8Array) {
   let binary = '';
   const len = bytes.byteLength;
@@ -288,7 +288,14 @@ const App: React.FC = () => {
   const stopTts = () => {
     if (currentAudioSourceRef.current) {
       try {
-        currentAudioSourceRef.current.stop();
+        // HTMLAudioElement인 경우
+        if ((currentAudioSourceRef.current as any).pause) {
+          (currentAudioSourceRef.current as any).pause();
+          (currentAudioSourceRef.current as any).currentTime = 0;
+        } else {
+          // AudioBufferSourceNode인 경우
+          currentAudioSourceRef.current.stop();
+        }
       } catch (e) {}
       currentAudioSourceRef.current = null;
     }
@@ -304,31 +311,38 @@ const App: React.FC = () => {
     stopTts();
     setPlayingMessageId(id);
 
-    const base64Audio = await generateSpeech(text, voiceName, philosopherName);
-    if (!base64Audio) {
+    try {
+      // 서버 API 호출
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ text, voiceName, philosopherName })
+      });
+
+      if (!response.ok) {
+        throw new Error('TTS API call failed');
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      const audio = new Audio(audioUrl);
+      audio.onended = () => {
+        setPlayingMessageId((prev) => (prev === id ? null : prev));
+        URL.revokeObjectURL(audioUrl);
+      };
+      
+      await audio.play();
+      
+      // 현재 재생 중인 오디오를 저장하기 위해 ref 사용
+      (currentAudioSourceRef.current as any) = audio;
+      
+    } catch (error) {
+      console.error('TTS playback error:', error);
       setPlayingMessageId(null);
-      return;
     }
-
-    if (!ttsAudioContextRef.current) {
-      ttsAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-    }
-
-    const audioBuffer = await decodeAudioData(
-      decode(base64Audio),
-      ttsAudioContextRef.current,
-      24000,
-      1
-    );
-
-    const source = ttsAudioContextRef.current.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(ttsAudioContextRef.current.destination);
-    source.onended = () => {
-      setPlayingMessageId((prev) => (prev === id ? null : prev));
-    };
-    source.start();
-    currentAudioSourceRef.current = source;
   };
 
   const handlePrescription = async () => {
